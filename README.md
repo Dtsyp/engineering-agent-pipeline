@@ -41,7 +41,7 @@ engpipe init
 engpipe task start add-checkout --kind feature --size large
 ```
 
-Read [Team Installation Guide](docs/INSTALL.md) and [Test Selection Guide](docs/TESTS.md).
+Read [Team Installation Guide](docs/INSTALL.md), [Agent Role Contracts](docs/ROLE_CONTRACTS.md), and [Test Selection Guide](docs/TESTS.md).
 
 ## CLI commands
 
@@ -79,6 +79,7 @@ install.sh            macOS, Linux, WSL2
 install.ps1           Windows entrypoint through WSL2
 tools/pipeline.py     task state, fingerprints, checks, reviews, profiles
 AGENTS.md             shared engineering guidance
+docs/ROLE_CONTRACTS.md  input/output, review, recovery and escalation contract
 .github/workflows/    tests for this configuration repo
 ```
 

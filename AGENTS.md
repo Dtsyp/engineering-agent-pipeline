@@ -2,6 +2,8 @@
 
 This is a portable, tool-agnostic engineering workflow for feature, bugfix and refactor tasks. Use the local CLI `engpipe` (or `python3 path/to/tools/pipeline.py`) for deterministic task state and gates; agents implement roles, models are replaceable per agent and via the three profiles.
 
+Use `docs/ROLE_CONTRACTS.md` for consistent inputs, outputs, escalation, recovery and review evidence. Each role is further specified in its `agents/pipeline-*.md` file.
+
 Every task: independent analysis → [if large/risky: architecture + two isolated design reviews + explicit human approval] → accountable implementation in approved vertical slices → targeted component AND downstream-service checks after each slice → ONE authoritative full validation after all slices → two independent code reviews → deterministic finish.
 
 After FIX or any code change, update targeted checks, rerun full validation and BOTH code reviews on the new fingerprint. This is the only reason to run the full suite again in the ordinary workflow. Never call DONE with stale evidence or failed tests.
