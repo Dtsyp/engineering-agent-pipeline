@@ -1,0 +1,108 @@
+{
+  "components": {
+    "backend-domain": {
+      "paths": [
+        "backend/domain/**",
+        "backend/tests/domain/**"
+      ],
+      "depends_on": [],
+      "slice_checks": [
+        [
+          "python3",
+          "-m",
+          "pytest",
+          "backend/tests/domain",
+          "-q"
+        ]
+      ]
+    },
+    "backend-api": {
+      "paths": [
+        "backend/api/**",
+        "backend/tests/api/**"
+      ],
+      "depends_on": [
+        "backend-domain"
+      ],
+      "slice_checks": [
+        [
+          "python3",
+          "-m",
+          "pytest",
+          "backend/tests/api",
+          "-q"
+        ]
+      ]
+    },
+    "frontend": {
+      "paths": [
+        "frontend/**"
+      ],
+      "depends_on": [
+        "backend-api"
+      ],
+      "slice_checks": [
+        [
+          "npm",
+          "--prefix",
+          "frontend",
+          "test",
+          "--",
+          "--runInBand"
+        ]
+      ]
+    },
+    "project-meta": {
+      "paths": [
+        "README.md",
+        ".gitignore",
+        "pyproject.toml",
+        "package.json"
+      ],
+      "depends_on": [],
+      "slice_checks": [
+        [
+          "python3",
+          "-c",
+          "print('Check configuration mapping for your project')"
+        ]
+      ]
+    }
+  },
+  "full_checks": [
+    [
+      "python3",
+      "-m",
+      "pytest",
+      "backend/tests",
+      "-q"
+    ],
+    [
+      "npm",
+      "--prefix",
+      "frontend",
+      "run",
+      "typecheck"
+    ],
+    [
+      "npm",
+      "--prefix",
+      "frontend",
+      "run",
+      "lint"
+    ],
+    [
+      "npm",
+      "--prefix",
+      "frontend",
+      "test"
+    ],
+    [
+      "npm",
+      "--prefix",
+      "frontend",
+      "run",
+      "build"
+    ]
+  ]
+}

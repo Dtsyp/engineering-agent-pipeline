@@ -1,0 +1,12 @@
+{
+  "pipeline-orchestrator": "openai/gpt-6.1-terra",
+  "pipeline-analyst": "openai/gpt-6.1-sol",
+  "pipeline-architect-l1": "openai/gpt-6.1-terra",
+  "pipeline-architect-l2": "openai/gpt-6.1-sol",
+  "pipeline-architect-l3": "openai/gpt-6.1-sol",
+  "pipeline-design-a": "openrouter/moonshotai/kimi-k3.1-pro",
+  "pipeline-design-b": "openrouter/z-ai/glm-5.3",
+  "pipeline-implementer": "openai/gpt-6.1-sol",
+  "pipeline-code-a": "openrouter/moonshotai/kimi-k3.1-pro",
+  "pipeline-code-b": "openrouter/z-ai/glm-5.3"
+}
