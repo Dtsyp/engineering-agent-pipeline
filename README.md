@@ -7,9 +7,11 @@ A portable **engineering workflow**, not a versioned migration guide. It coordin
 ## Guarantees and non-guarantees
 
 - ✅ One accountable implementer per approved task/slice, with optional continuation of its conversation; missing or expired session ID never blocks task recovery.
+- ✅ New tasks require preflight before Analyst and a durable evidence context before design/implementation. Downstream roles reuse that map without treating summaries as correctness proof.
 - ✅ After **each implementation slice**, run `engpipe task slice-check <slug>`: selects checks for changed components **and transitive downstream consumers** using a project impact map. It does **not** run the full suite.
-- ✅ After **all** slices, `engpipe task gate <slug>` runs the complete configured suite; both code reviewers inspect the same resulting fingerprint. After a FIX that changes code, new slice check, fresh full gate and both reviews are required.
+- ✅ After **all** slices, `engpipe task gate <slug>` obtains authoritative full-suite evidence; both code reviewers inspect the same resulting fingerprint. A prior PASS is reused only under an explicitly complete, unchanged code/dependency/config/environment fingerprint with an intact log. Otherwise the full suite runs.
 - ✅ Large/high-risk work requires architecture, two independent design reviews, and interactive human approval. Small tasks skip design, never code review.
+- ✅ Independent Review A/B may run concurrently in supported isolated host contexts; sequential fresh-context fallback remains mandatory when safe parallel dispatch is unavailable.
 - ✅ Finishing fails on stale fingerprint, changed frozen tests, missing PASS, model-family collision, or missing human approval. Optional session metadata does not block progress.
 - ⚠️ Models recorded in task state are declared configurations or operator-supplied metadata; the CLI does **not** cryptographically authenticate provider invocation. Inspect host logs before claiming live independence.
 - ⚠️ Agent prompts are not security isolation. Use least-privilege credentials, CI, branch protection, and approvals for high-risk changes.
@@ -56,9 +58,17 @@ engpipe doctor
 # In a project repo:
 engpipe init
 engpipe task start my-feature --kind feature --size small
+engpipe task preflight my-feature --goal "observable outcome" \
+  --in-scope "bounded behavior" --out-of-scope "explicit non-goal" \
+  --constraint "no new dependencies" --acceptance "observable check" \
+  --decision "fixed product behavior"
+# Analyst returns source evidence; record reusable navigation facts:
+engpipe task analysis-context my-feature \
+  --evidence "src/service.py:42 | current handler owns the behavior" \
+  --component "service + API consumer" --test "tests/test_service.py"
 engpipe task freeze-tests my-feature tests/test_contract.py
 engpipe task slice-check my-feature     # each slice; targeted + downstream
-engpipe task gate my-feature            # once after final slice
+engpipe task gate my-feature            # runs or safely reuses authoritative evidence
 engpipe task status my-feature
 engpipe task finish my-feature          # only after two passing reviews
 ```
@@ -89,5 +99,6 @@ docs/ROLE_CONTRACTS.md  input/output, review, recovery and escalation contract
 - **Missing API/model:** use another authorized model, record new author model and rerun relevant independent reviews. Different providers cannot be silently substituted.
 - **Unmapped changed file:** update `checks.json` with component ownership and downstream dependencies; rerun slice-check. Never silently skip checks.
 - **Code changed after full gate:** regenerate targeted evidence, full gate and both code reviews for the new fingerprint.
+- **Gate unexpectedly reruns:** inspect `gate_cache` declarations and identity probes; reuse is deliberately disabled when any relevant context is missing, changed or unavailable.
 - **GitHub sharing:** publish only this template/config repository. Project `.engineering-pipeline/tasks/` and secrets are local, not automatically synchronized between machines.
 

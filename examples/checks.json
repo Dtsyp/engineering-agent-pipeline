@@ -104,5 +104,12 @@
       "run",
       "build"
     ]
-  ]
+  ],
+  "gate_cache": {
+    "enabled": false,
+    "dependency_files": [],
+    "config_files": [],
+    "environment": [],
+    "env_vars": []
+  }
 }

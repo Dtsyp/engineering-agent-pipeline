@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import subprocess
@@ -23,6 +24,8 @@ REVIEWERS = ('pipeline-design-a','pipeline-design-b','pipeline-code-a','pipeline
 FAMILY_MAP = {'openai':'openai','anthropic':'anthropic','minimax':'minimax','moonshotai':'kimi','kimi':'kimi','z-ai':'glm','zai':'glm','glm':'glm','qwen':'qwen','deepseek':'deepseek','google':'google','gemini':'google'}
 NAME_PATTERN = re.compile(r'^[a-z][a-z0-9-]{1,60}$')
 MODEL_PATTERN = re.compile(r'^[a-z0-9_-]+/[A-Za-z0-9_./:-]+(?:#[A-Za-z0-9_-]+)?$')
+EVIDENCE_PATTERN = re.compile(r'^.+:\d+\s+\|\s+\S.*$')
+WORKFLOW_VERSION = 2
 
 class PipelineError(Exception): pass
 
@@ -43,6 +46,10 @@ def atomic_text(p, text):
 def atomic_json(p, data): atomic_text(p,json.dumps(data,ensure_ascii=False,indent=2,sort_keys=True)+'\n')
 
 def now(): return dt.datetime.now(dt.timezone.utc).isoformat()
+
+def json_hash(value):
+    encoded=json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf8')
+    return hashlib.sha256(encoded).hexdigest()
 
 def model_in_file(p):
     t=p.read_text(encoding='utf8')
@@ -310,6 +317,78 @@ def validate_command(value, where):
         die('invalid argv command in '+where+'; expected ["program","arg",...]')
     return value
 
+def require_preflight(s):
+    """Legacy in-flight tasks remain recoverable; version 2 tasks fail closed."""
+    if s.get('workflow_version',1)<WORKFLOW_VERSION:return
+    pre=s.get('preflight',{})
+    if pre.get('status')!='READY':die('preflight is incomplete or has blocking questions')
+
+def require_analysis_context(root,s):
+    if s.get('workflow_version',1)<WORKFLOW_VERSION:return
+    require_preflight(s)
+    rec=s.get('analysis_context',{})
+    path=tdir(root,s['slug'])/'analysis-context.json'
+    if rec.get('status')!='READY' or not path.is_file():die('evidence-based analysis context is required')
+    if rec.get('artifact_hash')!=file_hash(path):die('analysis context artifact changed; record it again')
+    if rec.get('preflight_fingerprint')!=s['preflight'].get('fingerprint'):die('analysis context is stale for current preflight')
+    if rec.get('code_fingerprint')!=fingerprint(root):die('analysis context is stale for current pre-implementation code')
+
+def relative_file(root,value,where):
+    if not isinstance(value,str) or not value:die('invalid path in '+where)
+    path=(root/value).resolve()
+    if not path.is_relative_to(root):die('path outside repository in '+where+': '+value)
+    if not path.is_file():die('missing declared file in '+where+': '+value)
+    return path
+
+def gate_context_fingerprint(root,cfg,commands):
+    """Return a cache key only for an explicitly complete validation context.
+
+    Probe output and selected environment values are hashed, never persisted.
+    Invalid declarations fail; unavailable probes merely disable reuse so the
+    authoritative full gate can still run.
+    """
+    cache=cfg.get('gate_cache')
+    if not isinstance(cache,dict) or not cache.get('enabled'):return None
+    dependency_files=cache.get('dependency_files')
+    config_files=cache.get('config_files')
+    probes=cache.get('environment')
+    env_vars=cache.get('env_vars',[])
+    if not isinstance(dependency_files,list) or not dependency_files:
+        print('GATE CACHE DISABLED: gate_cache.dependency_files must be non-empty',file=sys.stderr);return None
+    if not isinstance(config_files,list) or not config_files:
+        print('GATE CACHE DISABLED: gate_cache.config_files must be non-empty',file=sys.stderr);return None
+    if not isinstance(probes,list) or not probes:
+        print('GATE CACHE DISABLED: gate_cache.environment must contain identity probes',file=sys.stderr);return None
+    if not isinstance(env_vars,list) or not all(isinstance(x,str) and x for x in env_vars):
+        die('gate_cache.env_vars must be a list of environment variable names')
+    declared={}
+    for group,values in (('dependency_files',dependency_files),('config_files',config_files)):
+        if not all(isinstance(x,str) and x for x in values):die('gate_cache.'+group+' must contain paths')
+        declared[group]={value:file_hash(relative_file(root,value,'gate_cache.'+group)) for value in sorted(set(values))}
+    observed=[]
+    for index,value in enumerate(probes):
+        argv=validate_command(value,'gate_cache.environment['+str(index)+']')
+        executable=shutil.which(argv[0])
+        if not executable:
+            print('GATE CACHE DISABLED: environment probe executable unavailable: '+argv[0],file=sys.stderr);return None
+        try:
+            result=subprocess.run(argv,cwd=root,capture_output=True,text=True,timeout=30)
+        except (subprocess.TimeoutExpired,OSError) as exc:
+            print('GATE CACHE DISABLED: environment probe failed: '+str(exc),file=sys.stderr);return None
+        if result.returncode:
+            print('GATE CACHE DISABLED: environment probe returned '+str(result.returncode)+': '+shlex.join(argv),file=sys.stderr);return None
+        resolved=Path(executable).resolve()
+        observed.append({'argv':argv,'executable':str(resolved),'executable_hash':file_hash(resolved),
+                         'output_hash':hashlib.sha256((result.stdout+'\0'+result.stderr).encode('utf8')).hexdigest()})
+    payload={'code_fingerprint':fingerprint(root),'checks_hash':file_hash(root/'.engineering-pipeline'/'checks.json'),
+             'full_checks':[list(x) for x in commands],'declared_files':declared,
+             'runtime':{'os_name':os.name,'sys_platform':sys.platform,'machine':platform.machine(),
+                        'python':platform.python_version(),'implementation':platform.python_implementation()},
+             'environment_probes':observed,
+             'environment_values':{name:hashlib.sha256(os.environ.get(name,'<UNSET>').encode('utf8')).hexdigest()
+                                   for name in sorted(set(env_vars))}}
+    return json_hash(payload)
+
 def impact_checks(cfg, changed):
     components=cfg['components']
     direct=set()
@@ -379,12 +458,22 @@ def require_gate(root,s):
     require_frozen(root,s)
     g=s.get('full_gate',{})
     if g.get('status')!='PASS' or g.get('fingerprint')!=fingerprint(root):die('full gate not green for current code fingerprint')
+    if g.get('cacheable'):
+        cfg=checks_config(root);raw=cfg.get('full_checks')
+        if not isinstance(raw,list) or not raw:die('full gate configuration is no longer valid')
+        commands=[tuple(validate_command(c,'full_checks')) for c in raw]
+        current=gate_context_fingerprint(root,cfg,commands)
+        if current!=g.get('context_fingerprint'):die('full gate validation context changed; run task gate again')
+        log=Path(g.get('log',''))
+        if g.get('log_hash')!=file_hash(log):die('full gate evidence log changed; run task gate again')
 
 def cmd_init(a):
     root=project_root();dirname=root/'.engineering-pipeline';dirname.mkdir(exist_ok=True)
     checks=dirname/'checks.json'
     if not checks.exists():
-        atomic_json(checks,{'components':{},'full_checks':[]})
+        atomic_json(checks,{'components':{},'full_checks':[],
+                            'gate_cache':{'enabled':False,'dependency_files':[],
+                                          'config_files':[],'environment':[],'env_vars':[]}})
     exclusion=root/'.git/info/exclude'
     if exclusion.exists():
         val=exclusion.read_text()
@@ -397,12 +486,43 @@ def cmd_task(a):
     if a.op=='start':
         if path.exists():die('task already exists: '+a.slug)
         td=tdir(root,a.slug);td.mkdir(parents=True,exist_ok=True)
-        s={'slug':a.slug,'kind':a.kind,'size':a.size,'created_at':now(),'architect_role':a.architect if a.size=='large' else None,'implementer_role':'pipeline-implementer','architect_model':(getattr(a,'architect_model',None) or active_models()[a.architect]) if a.size=='large' else None,'implementer_model':getattr(a,'implementer_model',None) or active_models()['pipeline-implementer'],'status':'ANALYSIS','design_reviews':{},'code_reviews':{},'frozen_tests':{},'full_gate':{},'slice_checks':[],'slice_snapshot':file_snapshot(root)}
+        s={'workflow_version':WORKFLOW_VERSION,'slug':a.slug,'kind':a.kind,'size':a.size,'created_at':now(),'architect_role':a.architect if a.size=='large' else None,'implementer_role':'pipeline-implementer','architect_model':(getattr(a,'architect_model',None) or active_models()[a.architect]) if a.size=='large' else None,'implementer_model':getattr(a,'implementer_model',None) or active_models()['pipeline-implementer'],'status':'PREFLIGHT','preflight':{},'analysis_context':{},'design_reviews':{},'code_reviews':{},'frozen_tests':{},'full_gate':{},'slice_checks':[],'slice_snapshot':file_snapshot(root)}
         save_state(root,a.slug,s);print('Task created:',td);return
     s=get_state(root,a.slug)
     if a.op=='status':
         print(json.dumps({'task':s,'current_code_fingerprint':fingerprint(root)},indent=2,ensure_ascii=False));return
     if s['status']=='DONE':die('task already DONE')
+    if a.op=='preflight':
+        if s.get('frozen_tests') or s.get('slice_checks') or s.get('full_gate'):
+            die('cannot replace preflight after implementation validation has started')
+        data={'goal':a.goal,'in_scope':a.in_scope,'out_of_scope':a.out_of_scope,
+              'constraints':a.constraint,'acceptance':a.acceptance,'decisions':a.decision,
+              'blocking_questions':a.blocking_question}
+        artifact=tdir(root,a.slug)/'preflight.json';atomic_json(artifact,data)
+        status='BLOCKED' if a.blocking_question else 'READY'
+        s['preflight']={'status':status,'fingerprint':file_hash(artifact),'artifact':str(artifact),'recorded_at':now()}
+        s['analysis_context']={};s['design_reviews']={};s['design_approved_fingerprint']=None;s['design_approved_at']=None
+        s['status']='PREFLIGHT_BLOCKED' if status=='BLOCKED' else 'ANALYSIS'
+        save_state(root,a.slug,s)
+        print('Preflight',status+':',artifact)
+        if status=='BLOCKED':print('Resolve material product questions and record preflight again before Analyst.')
+        return
+    if a.op=='analysis-context':
+        require_preflight(s)
+        if s.get('frozen_tests') or s.get('slice_checks') or s.get('full_gate'):
+            die('cannot replace analysis context after implementation validation has started')
+        bad=[item for item in a.evidence if not EVIDENCE_PATTERN.fullmatch(item)]
+        if bad:die('analysis evidence must use `path:line | verified claim`: '+bad[0])
+        data={'preflight_fingerprint':s['preflight']['fingerprint'],'evidence':a.evidence,
+              'components':a.component,'tests':a.test,'risks':a.risk,
+              'decisions':a.decision,'unknowns':a.unknown}
+        artifact=tdir(root,a.slug)/'analysis-context.json';atomic_json(artifact,data)
+        s['analysis_context']={'status':'READY','artifact':str(artifact),'artifact_hash':file_hash(artifact),
+                               'preflight_fingerprint':s['preflight']['fingerprint'],
+                               'code_fingerprint':fingerprint(root),'recorded_at':now()}
+        s['design_reviews']={};s['design_approved_fingerprint']=None;s['design_approved_at']=None
+        s['status']='DESIGN' if s['size']=='large' else 'IMPLEMENTATION_READY'
+        save_state(root,a.slug,s);print('Analysis context READY:',artifact);return
     if a.op=='author-model':
         # A model change applies to future work and invalidates judgments about the author.
         fam=family(a.model)
@@ -419,6 +539,8 @@ def cmd_task(a):
             print('Implementer model updated; both code reviews must be repeated')
         save_state(root,a.slug,s);return
     if a.op=='freeze-tests':
+        require_analysis_context(root,s)
+        if s['size']=='large':require_design(root,s)
         if not a.paths:die('specify acceptance test paths; freeze before implementation')
         frozen={}
         for rel in a.paths:
@@ -429,6 +551,7 @@ def cmd_task(a):
         s['frozen_tests']=frozen;save_state(root,a.slug,s);print('Frozen',len(frozen),'acceptance test(s)');return
     if a.op=='design-review':
         if s['size']!='large':die('design reviews only required for large tasks')
+        require_analysis_context(root,s)
         dfp=file_hash(tdir(root,a.slug)/'design.md')
         if dfp=='MISSING':die('create design.md first')
         who='pipeline-design-'+a.focus;model=getattr(a,'model',None) or active_models()[who]
@@ -480,12 +603,24 @@ def cmd_task(a):
         commands=[tuple(validate_command(c,'full_checks')) for c in commands]
         before=fingerprint(root)
         log=tdir(root,a.slug)/'full-gate.log'
+        context_before=gate_context_fingerprint(root,cfg,commands)
+        previous=s.get('full_gate',{})
+        if (context_before and previous.get('status')=='PASS' and previous.get('fingerprint')==before
+                and previous.get('context_fingerprint')==context_before and previous.get('log_hash')==file_hash(log)):
+            previous['reuse_count']=previous.get('reuse_count',0)+1
+            previous['last_reused_at']=now();s['full_gate']=previous;save_state(root,a.slug,s)
+            print('Full gate REUSED on',before,'(code, dependencies, config and environment unchanged)');return
         success=run_checks(root,commands,log)
         after=fingerprint(root)
         success=success and before==after
-        s['full_gate']={'status':'PASS' if success else 'FAIL','fingerprint':after if success else '', 'at':now(),'log':str(log)}
+        context_after=gate_context_fingerprint(root,cfg,commands)
+        if context_before or context_after:success=success and context_before==context_after
+        s['full_gate']={'status':'PASS' if success else 'FAIL','fingerprint':after if success else '',
+                        'context_fingerprint':context_after if success else None,
+                        'cacheable':bool(success and context_after),'at':now(),'log':str(log),
+                        'log_hash':file_hash(log) if success else None,'reuse_count':0}
         save_state(root,a.slug,s)
-        if not success:die('full gate FAIL or code modified during gate; see '+str(log))
+        if not success:die('full gate FAIL or code/environment modified during gate; see '+str(log))
         print('Full gate PASS on',after);return
     if a.op=='code-review':
         if s['size']=='large':require_design(root,s)
@@ -531,9 +666,18 @@ def main():
     z=xs.add_parser('set');z.add_argument('role');z.add_argument('selector');z.set_defaults(fn=cmd_model)
     x=s.add_parser('init');x.set_defaults(fn=cmd_init)
     x=s.add_parser('task');xs=x.add_subparsers(dest='op',required=True)
-    for op in ('start','status','author-model','freeze-tests','design-review','approve-design','gate','slice-check','code-review','finish'):
+    for op in ('start','status','preflight','analysis-context','author-model','freeze-tests','design-review','approve-design','gate','slice-check','code-review','finish'):
         z=xs.add_parser(op);z.add_argument('slug')
         if op=='start':z.add_argument('--kind',choices=['feature','bugfix','refactor'],required=True);z.add_argument('--size',choices=['small','large'],required=True);z.add_argument('--architect',choices=ARCHS,default='pipeline-architect-l2');z.add_argument('--architect-model');z.add_argument('--implementer-model')
+        if op=='preflight':
+            z.add_argument('--goal',required=True);z.add_argument('--in-scope',action='append',required=True)
+            z.add_argument('--out-of-scope',action='append',default=[]);z.add_argument('--constraint',action='append',default=[])
+            z.add_argument('--acceptance',action='append',required=True);z.add_argument('--decision',action='append',default=[])
+            z.add_argument('--blocking-question',action='append',default=[])
+        if op=='analysis-context':
+            z.add_argument('--evidence',action='append',required=True);z.add_argument('--component',action='append',default=[])
+            z.add_argument('--test',action='append',default=[]);z.add_argument('--risk',action='append',default=[])
+            z.add_argument('--decision',action='append',default=[]);z.add_argument('--unknown',action='append',default=[])
         if op=='freeze-tests':z.add_argument('paths',nargs='+')
         if op=='author-model':z.add_argument('--role',choices=['architect','implementer'],required=True);z.add_argument('--model',required=True)
         if op in ('design-review','code-review'):

@@ -6,8 +6,9 @@ The per-project `.engineering-pipeline/checks.json` is a **dependency-aware vali
 2. For every impacted component, recursively include components that list it in `depends_on` (downstream consumers). Run each unique `slice_checks` command once, passing executable+arguments as JSON arrays (no shell interpolation).
 3. If any path lacks an owner, **do not claim slice PASS**. Extend the map with the affected component and dependency information. Unknown files are not a reason to run a full suite automatically, nor permission to skip tests.
 4. A successful slice-check records a fingerprint, changed paths, impacted components, command list and a log. Failures preserve the old baseline so the next attempt checks the changes again.
-5. The **single final full gate** runs `full_checks` after all slices, and only if there are no unverified changes since the last slice check. It must include the actual project-required test/typecheck/lint/build/integration steps. Review A and B run on the same fingerprint after the final gate.
-6. After a review FIX produces code changes, another targeted slice-check is required, followed by a fresh final full gate and **both** reviewers. This is not redundant checking; the old evidence describes different code.
+5. The **authoritative final full gate** obtains `full_checks` evidence after all slices, and only if there are no unverified changes since the last slice check. It must include the actual project-required test/typecheck/lint/build/integration steps. Review A and B run on the same fingerprint after the gate.
+6. An optional `gate_cache` can reuse a prior PASS. Reuse is fail-closed: code fingerprint, full commands, `checks.json`, declared dependency/config files, runtime, executable and probe-output identity, selected environment values and the saved log hash must all match. Missing declarations or an unavailable probe disables reuse and executes the full gate.
+7. After a review FIX produces code changes, another targeted slice-check is required, followed by current full-gate evidence and **both** reviewers. The old code fingerprint can never be certified. A repeated gate call with no relevant change may reuse the verified PASS instead of rerunning identical commands.
 
 Example for Python backend + API + frontend:
 
@@ -41,10 +42,24 @@ Example for Python backend + API + frontend:
     ["npm", "--prefix", "frontend", "run", "lint"],
     ["npm", "--prefix", "frontend", "test"],
     ["npm", "--prefix", "frontend", "run", "build"]
-  ]
+  ],
+  "gate_cache": {
+    "enabled": true,
+    "dependency_files": ["requirements.lock", "frontend/package-lock.json"],
+    "config_files": ["pyproject.toml", "frontend/tsconfig.json", "frontend/vite.config.ts"],
+    "environment": [
+      ["python3", "--version"],
+      ["python3", "-m", "pip", "freeze", "--all"],
+      ["node", "--version"],
+      ["npm", "--version"]
+    ],
+    "env_vars": ["CI", "NODE_ENV"]
+  }
 }
 ```
 
 **Replace this example with real commands.** The `project-meta` example is *not* adequate validation for changes to build configuration; configure the appropriate checks in production. `engpipe init` creates an empty manifest that fails until configured. For monorepos add generated-code contracts and test impact of schema or OpenAPI changes. Cache successful tool outputs with your build system; the manifest itself does not implement incremental build caching.
 
-**Assumptions:** impact graph is manually curated. It does not derive dependencies from the AST. The correctness of impacted-tests selection depends on this graph being maintained. CI and code owners should review changes to it.
+`dependency_files` and `config_files` must be existing repository-relative files. Environment commands are argv arrays executed without a shell; their output is hashed, not stored. Declare commands that identify installed dependencies as well as tool versions (for example `pip freeze`, not only `python --version`). Environment values are also hashed and never written to task state. If your gate depends on containers, databases, service images or other external state, add a deterministic identity probe for it or leave caching disabled.
+
+**Assumptions:** impact graph and gate-cache context are manually curated. The pipeline does not derive dependencies from the AST or infer every external service dependency. CI and code owners should review changes to both. A misleading identity probe can make any cache unsafe, so disable reuse when the relevant environment cannot be fingerprinted.

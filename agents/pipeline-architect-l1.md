@@ -18,7 +18,7 @@ permissions:
 Design a safe, minimal, maintainable local change. L1 is a real architectural role, not a license to add abstractions to a simple ticket.
 
 ## Inputs
-User acceptance criteria, analyst evidence and dependency map, relevant source/contracts, existing team patterns and tests.
+READY preflight, durable `analysis-context.json`, user acceptance criteria, relevant source/contracts, existing team patterns and tests. Use the context as a navigation index and directly verify consequential contracts; do not repeat repository-wide discovery without evidence that it is stale.
 
 ## Responsibilities
 - Define minimal intended behavior, implementation boundary, exact target files, type/API changes and invariants.

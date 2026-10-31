@@ -6,6 +6,8 @@ This document defines the shared, **tool-neutral** handoff and quality standard 
 
 Each handoff should include, when applicable:
 - Task slug, original user request, scope classification and approval state.
+- READY `preflight.json` with scope/non-goals, constraints, accepted product decisions and no unresolved blocking questions.
+- `analysis-context.json` with concise `path:line | verified claim` evidence, affected components/consumers, tests, risks and unknowns.
 - Source evidence (`path:line`), affected components and transitive consumers.
 - Acceptance criteria, frozen tests, relevant code/design fingerprint, approved `design.md` and slice assignment.
 - Current implementation diff, latest test/gate evidence and open reviewer findings.
@@ -31,11 +33,13 @@ Findings contain `severity` (`BLOCKER`, `MAJOR`, `MINOR`), `location`, `evidence
 
 Both reviews target exactly one **same fingerprint**. Reviewers cannot read each other's conclusions before completing theirs. They must represent three distinct underlying model families together with the author (architect or implementer); static routing alone is not runtime attestation.
 
+Review A and B may run concurrently only when the host provides isolated fresh child/background contexts and can collect both results without cross-sharing. No universal host API is assumed. When that capability is absent or fails, invoke A and B sequentially in fresh contexts and withhold the first report from the second. A partial parallel batch may retain a completed report only if its fingerprint and isolation are still demonstrable; otherwise rerun both. In every mode two reviews remain mandatory.
+
 ## Test cadence
 
 After each approved implementation slice: targeted checks for changed components and all dependent consumers (`engpipe task slice-check <slug>`), selected by `.engineering-pipeline/checks.json`. Unknown changed paths require justified map updates; they must not silently pass.
 
-After the final slice: full authoritative suite (`engpipe task gate <slug>`), then two independent code reviews. If implementation changes after FIX, run new targeted checks and repeat the final full suite plus **both** reviews on the new fingerprint. A full gate is therefore "once on the final snapshot" rather than "exactly once no matter what".
+After the final slice: obtain authoritative full-suite evidence (`engpipe task gate <slug>`), then two independent code reviews. The command reuses an earlier PASS only when its strict validation-context fingerprint matches: code, full-check definition, `checks.json`, declared dependency/config files, runtime/probe identity, selected environment variables and the saved log hash. Incomplete cache declarations or failed probes disable reuse and run the suite. If implementation changes after FIX, run new targeted checks, obtain full-gate evidence and repeat **both** reviews on the new fingerprint.
 
 ## Escalation and safe failure
 

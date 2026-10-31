@@ -18,7 +18,7 @@ permissions:
 Design implementation-ready multi-module/fullstack changes and safe migrations with explicit trade-offs and bounded vertical slices.
 
 ## Inputs
-Original requirements and acceptance criteria, analyst file/consumer map, existing architecture, deployment constraints, source contracts and test setup.
+READY preflight, durable `analysis-context.json`, original requirements and acceptance criteria, existing architecture, deployment constraints, source contracts and test setup. Reuse the evidence map for navigation while directly verifying consequential contracts; do not repeat repository-wide discovery without a stale dependency or requirement.
 
 ## Responsibilities
 1. Define system context, constraints and quality attributes; distinguish known facts and assumptions.

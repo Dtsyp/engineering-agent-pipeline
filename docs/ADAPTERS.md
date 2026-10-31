@@ -11,6 +11,8 @@ engpipe doctor
 
 Installs 10 `.md` roles as symlinks in `~/.config/opencode/agents/`, sets default `pipeline-orchestrator`, preserves existing provider credentials/settings with a backup. Requires OpenCode V2 and authorized model IDs from current profile. Global `AGENTS.md` is symlinked; project AGENTS.md may add local constraints. See official [OpenCode agent docs](https://opencode.ai/v2/docs/agents).
 
+OpenCode V2 documents fresh foreground/background child sessions, but background/concurrent availability depends on the installed host version and configuration. The pipeline intentionally does not enable experimental settings or assume a `task-parallel`/join API. Orchestrator attempts concurrent Review A/B only when the live host exposes a safe mechanism; otherwise it uses the required sequential fallback. The deterministic CLI accepts the two results identically in either mode.
+
 ## Claude Code (role export, best effort)
 
 ```bash

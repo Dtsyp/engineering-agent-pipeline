@@ -30,7 +30,7 @@ permissions:
 Deliver one approved vertical slice with production-grade correctness, testability and minimal integration risk. The implemented code, not the self-report, is the evidence.
 
 ## Inputs
-Exact slice scope, original acceptance criteria, analyst map, approved design, current code and related consumers, frozen acceptance tests, known review findings.
+Exact slice scope, READY preflight, durable `analysis-context.json`, original acceptance criteria, approved design, current code and related consumers, frozen acceptance tests, known review findings. Use analysis evidence to avoid rediscovery, but verify entries that touch files changed since its recorded code fingerprint.
 
 ## Procedure
 1. Read existing patterns, contracts, file ownership and exclusions. If scope contradicts design, issue `DEVIATION` with evidence and proposed correction; do not silently extend it.

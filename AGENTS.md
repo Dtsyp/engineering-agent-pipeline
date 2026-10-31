@@ -4,9 +4,13 @@ This is a portable, tool-agnostic engineering workflow for feature, bugfix and r
 
 Use `docs/ROLE_CONTRACTS.md` for consistent inputs, outputs, escalation, recovery and review evidence. Each role is further specified in its `agents/pipeline-*.md` file.
 
-Every task: independent analysis → [if large/risky: architecture + two isolated design reviews + explicit human approval] → accountable implementation in approved vertical slices → targeted component AND downstream-service checks after each slice → ONE authoritative full validation after all slices → two independent code reviews → deterministic finish.
+Every new task: bounded preflight → evidence-based analysis context → [if large/risky: architecture + two isolated design reviews + explicit human approval] → accountable implementation in approved vertical slices → targeted component AND downstream-service checks after each slice → authoritative full validation after all slices → two independent code reviews → deterministic finish.
 
-After FIX or any code change, update targeted checks, rerun full validation and BOTH code reviews on the new fingerprint. This is the only reason to run the full suite again in the ordinary workflow. Never call DONE with stale evidence or failed tests.
+Preflight must settle scope, non-goals, immutable contracts, allowed changes and blocking product decisions before Analyst. Persist concise `path:line` evidence in `analysis-context.json` and reuse it for navigation; reviewers still verify conclusions independently. Reopen broad analysis only when relevant requirements, code or dependencies changed.
+
+After FIX or any code change, update targeted checks, obtain current full-validation evidence and repeat BOTH code reviews on the new fingerprint. `engpipe task gate` may reuse an earlier PASS only when code, declared dependency/config files, checks, relevant environment identity and evidence-log integrity are all unchanged. Otherwise it runs the full suite. Never call DONE with stale evidence or failed tests.
+
+Design Review A/B and Code Review A/B are dependency-independent and should run concurrently only when the host has a supported isolated child/background mechanism. They receive the same immutable inputs and never each other's reports. If parallel dispatch is unavailable, fails, or cannot preserve isolation, run both sequentially in fresh contexts; fallback never removes a reviewer.
 
 The orchestrator should determine size from risks and evidence, escalating unknown high-risk contracts to large. A missing agent session ID is not a work blocker: recover from on-disk task artifacts and continue. Session IDs are optional audit hints, not stable task identity. Genuine code errors, uncovered file impacts, unavailable independent reviewers, absent human approval, unverified model identity and failed gates **must never** be silently bypassed.
 
