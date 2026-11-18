@@ -1,21 +1,12 @@
-# Engineering pipeline — shared guidance
+# Engineering pipeline
 
-This is a portable, tool-agnostic engineering workflow for feature, bugfix and refactor tasks. Use the local CLI `engpipe` (or `python3 path/to/tools/pipeline.py`) for deterministic task state and gates; agents implement roles, models are replaceable per agent and via the three profiles.
+Use the local `engpipe` CLI for task state and validation. The canonical role prompts live in `agents/`. See [role contracts](docs/ROLE_CONTRACTS.md), [host entry points](docs/ADAPTERS.md) and [terminal execution](docs/RUN.md).
 
-Use `docs/ROLE_CONTRACTS.md` for consistent inputs, outputs, escalation, recovery and review evidence. Each role is further specified in its `agents/pipeline-*.md` file.
+1. Record the observable goal, scope, constraints, acceptance criteria and material decisions at preflight. Stop on a product question that changes correctness. Record source-based analysis before design or implementation.
+2. Choose the smallest workflow consistent with risk. For large changes select one architect level, obtain separate A and B design reviews on the same review input, and seek explicit human approval of the reviewed design.
+3. Freeze agreed acceptance tests. Assign one accountable implementer per slice. Run targeted checks for every changed component and its transitive downstream consumers, then run the configured full checks after the last slice.
+4. Before each review pair, capture `engpipe task review-input SLUG design` or `engpipe task review-input SLUG code`. Give A and B identical inputs in fresh contexts. Collect both reports before sharing findings. Run them concurrently when the host supports isolated dispatch, otherwise use separate sequential invocations.
+5. Record real verdicts against the original token with concrete evidence of what each reviewer checked. Follow the task's model policy. Configured model selectors and optional session IDs describe provenance; only host evidence can substantiate actual invocation details.
+6. Return actionable FIX findings to the accountable author. Recheck changed code or design and obtain two fresh reviews for the new input. Only report completion after `engpipe task finish` succeeds.
 
-Every new task: bounded preflight → evidence-based analysis context → [if large/risky: architecture + two isolated design reviews + explicit human approval] → accountable implementation in approved vertical slices → targeted component AND downstream-service checks after each slice → authoritative full validation after all slices → two independent code reviews → deterministic finish.
-
-Preflight must settle scope, non-goals, immutable contracts, allowed changes and blocking product decisions before Analyst. Persist concise `path:line` evidence in `analysis-context.json` and reuse it for navigation; reviewers still verify conclusions independently. Reopen broad analysis only when relevant requirements, code or dependencies changed.
-
-After FIX or any code change, update targeted checks, obtain current full-validation evidence and repeat BOTH code reviews on the new fingerprint. `engpipe task gate` may reuse an earlier PASS only when code, declared dependency/config files, checks, relevant environment identity and evidence-log integrity are all unchanged. Otherwise it runs the full suite. Never call DONE with stale evidence or failed tests.
-
-Design Review A/B and Code Review A/B are dependency-independent and should run concurrently only when the host has a supported isolated child/background mechanism. They receive the same immutable inputs and never each other's reports. If parallel dispatch is unavailable, fails, or cannot preserve isolation, run both sequentially in fresh contexts; fallback never removes a reviewer.
-
-The orchestrator should determine size from risks and evidence, escalating unknown high-risk contracts to large. A missing agent session ID is not a work blocker: recover from on-disk task artifacts and continue. Session IDs are optional audit hints, not stable task identity. Genuine code errors, uncovered file impacts, unavailable independent reviewers, absent human approval, unverified model identity and failed gates **must never** be silently bypassed.
-
-Use distinct underlying model families for review A and B and different from the relevant author. Gateway name is not model family. Report that model independence is **configuration-verified only** unless real invocation records are inspected. Do not share reviewer reports until both are complete. Never silently change frozen acceptance tests or commit/push without authorization.
-
-Set up `.engineering-pipeline/checks.json` in each project. Every component lists file patterns, upstream `depends_on`, and targeted commands; the dependency graph determines downstream checks. Unknown changed paths require updating this map, not skipping tests. `full_checks` are the authoritative project validation. No tokens, passwords, production code, API keys or private task history belong in this configuration repository.
-
-Platform adapters (OpenCode, Claude Code, Codex) have different capabilities. Never assume all three support the same providers, subagent permissions or session metadata. The CLI's correctness gates are portable; orchestration is best effort unless proven with integration tests. Use an external or independent review channel when the host cannot provide distinct model families.
+Session expiration allows recovery from on-disk artifacts. Missing tests, stale evidence and outstanding human approval require action. Keep project task histories, credentials and model-provider secrets private. Commit and push when the user authorizes publication.

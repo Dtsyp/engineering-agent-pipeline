@@ -1,54 +1,44 @@
-# Agent Role Contracts
+# Role contracts
 
-This document defines the shared, **tool-neutral** handoff and quality standard for the ten specialized engineering roles. The Markdown files in `agents/` are authoritative role-specific instructions. Model IDs and runtime access rules are configuration details, not role identity.
+| Role | Receives | Returns |
+|---|---|---|
+| Orchestrator | Request, project constraints, durable task state | Scope, decisions, phase changes, test evidence and recorded reviewer outcomes |
+| Analyst | Ready preflight and repository | Relevant contract, concrete `path:line \| claim` evidence, dependencies, tests and unknowns |
+| Architect (one of L1/L2/L3) | Reviewed scope and evidence for a large task | A design, alternatives, invariants, rollout and acceptance conditions |
+| Design A / B | The same proposed design and review input in separate contexts | Two reports, each tied to the dispatched design |
+| Implementer | Agreed scope, frozen tests, approved design where required, prior actionable findings | One coherent change, affected components and verification details |
+| Code A / B | The same working tree, requirements, verified full-gate evidence and review input | Two reports, each tied to the dispatched code and gate |
 
-## Durable task handoff
+Use the analysis context to navigate. Reviewers independently inspect relevant code, failure paths and evidence. A focuses on correctness and regressions. B focuses on reliability, permissions, operability and maintenance. Both can flag a defect in any area.
 
-Each handoff should include, when applicable:
-- Task slug, original user request, scope classification and approval state.
-- READY `preflight.json` with scope/non-goals, constraints, accepted product decisions and no unresolved blocking questions.
-- `analysis-context.json` with concise `path:line | verified claim` evidence, affected components/consumers, tests, risks and unknowns.
-- Source evidence (`path:line`), affected components and transitive consumers.
-- Acceptance criteria, frozen tests, relevant code/design fingerprint, approved `design.md` and slice assignment.
-- Current implementation diff, latest test/gate evidence and open reviewer findings.
-- Verified model invocation metadata *if available*, without inventing session IDs.
+## Reviews and corrections
 
-The canonical task state lives under `.engineering-pipeline/tasks/<slug>/`. Session IDs are optional hints. If a prior conversation disappears, hydrate a fresh agent from durable artifacts and continue. Never silently skip important checks because context is missing.
+Capture the input **before** dispatch with `engpipe task review-input SLUG design` or `engpipe task review-input SLUG code`. Preserve its `against` token. Give both reviewers the same task inputs and keep their findings separate until both return. If the input changes while the reviewers are working, discard stale answers. Do not obtain a new token on behalf of an old reviewer report.
 
-## Review output contract
-
-Reviewers return one JSON object:
+An example individual report:
 
 ```json
 {
-  "verdict": "PASS",
-  "blockers": 0,
-  "findings": [],
-  "checked": ["specific contracts and evidence inspected"],
+  "verdict": "FIX",
+  "blockers": 1,
+  "findings": [{
+    "severity": "BLOCKER",
+    "location": "src/retry.py:42",
+    "evidence": "The timeout path submits the same charge again",
+    "impact": "Retry can charge a customer twice",
+    "suggested_fix": "Reuse the original idempotency key"
+  }],
+  "checked": ["Inspected the retry branch and the duplicate-charge regression test"],
   "uncertainties": []
 }
 ```
 
-Findings contain `severity` (`BLOCKER`, `MAJOR`, `MINOR`), `location`, `evidence`, `impact`, and `suggested_fix`. Any material unresolved blocker or major defect => `FIX`. An unsupported concern belongs in `uncertainties`, not as a fabricated blocker. The Orchestrator translates real reviewer results into `engpipe task design-review/code-review ... --findings ...`; reviewers never certify themselves or modify state.
+The orchestrator records actual reports through the CLI, supplies the original `--against` and concrete `--checked` evidence, and forwards actionable findings. Pass findings as a JSON array to `--findings`. Each entry follows the schema above. A PASS may include MINOR findings only. The blocker count equals the number of BLOCKER entries. Use the exact host model or session identity only when available. The default policy requires independent contexts. Under strict family routing, the author and both reviewers also need distinct declared families.
 
-Both reviews target exactly one **same fingerprint**. Reviewers cannot read each other's conclusions before completing theirs. They must represent three distinct underlying model families together with the author (architect or implementer); static routing alone is not runtime attestation.
+After a FIX, the implementer or architect addresses the finding. Submit the revised work to both reviewers. For a large design, the human approves the reviewed design before implementation. A terminal waiting for approval must preserve the task so the user can continue it.
 
-Review A and B may run concurrently only when the host provides isolated fresh child/background contexts and can collect both results without cross-sharing. No universal host API is assumed. When that capability is absent or fails, invoke A and B sequentially in fresh contexts and withhold the first report from the second. A partial parallel batch may retain a completed report only if its fingerprint and isolation are still demonstrable; otherwise rerun both. In every mode two reviews remain mandatory.
+## Recovery
 
-## Test cadence
+The task slug and records in `.engineering-pipeline/tasks/SLUG/` identify the work. Keep these files local. Restore the request, review input, implementation diff, prior findings and the last completed phase before proceeding. Recheck stale evidence. Reusing a model conversation is optional. A local confirmation records an operator's decision within the trust boundary of the machine.
 
-After each approved implementation slice: targeted checks for changed components and all dependent consumers (`engpipe task slice-check <slug>`), selected by `.engineering-pipeline/checks.json`. Unknown changed paths require justified map updates; they must not silently pass.
-
-After the final slice: obtain authoritative full-suite evidence (`engpipe task gate <slug>`), then two independent code reviews. The command reuses an earlier PASS only when its strict validation-context fingerprint matches: code, full-check definition, `checks.json`, declared dependency/config files, runtime/probe identity, selected environment variables and the saved log hash. Incomplete cache declarations or failed probes disable reuse and run the suite. If implementation changes after FIX, run new targeted checks, obtain full-gate evidence and repeat **both** reviews on the new fingerprint.
-
-## Escalation and safe failure
-
-- Missing/expired session ID, host change, agent rename, lost context: reconstruct and continue, no automatic refusal.
-- Unknown requirements/contracts: request analyst discovery or human decision; do not guess high-stakes semantics.
-- Missing human approval on large design, failed tests, stale fingerprint, reviewer-family collision, no authoritative evidence: block `DONE` and state exactly what is missing.
-- Any inability to run independent review via one host: use an authorized external review channel, record evidence, and make independence claims only if verified.
-- Never weaken protected acceptance tests, force green results, conceal skipped checks, or commit/push without explicit authorization.
-
-## Platform independence
-
-OpenCode, Claude Code and Codex have different subagent, permission and model selection capabilities. The durable task schema and deterministic `engpipe` gates are portable; identical orchestration and automatic role-model routing are not guaranteed. Always test each adapter under its own host, and disclose unavailable capabilities.
+For a v1/v2 in-flight task, use `engpipe task migrate SLUG`. The migration archives the old records, preserves the original frozen tests and requires fresh scope, validation and reviews. Old records lack a trustworthy original Git tree. The migration therefore submits the entire current source tree for review, including changes already committed. It lists previously known paths now absent as `migration_missing_paths`. The reviewers must treat historical deletions without recoverable contents as uncertainties, and request evidence where this affects the decision. Supply `--host codex`, `--host claude` or `--host opencode` to adopt that host's policy. Inspect the saved migration instructions before resuming. When an approved large design must change during implementation, use `engpipe task reopen-design SLUG`, then obtain a new pair of design reviews and a new human approval.

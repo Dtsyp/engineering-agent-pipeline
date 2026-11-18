@@ -1,17 +1,19 @@
 ---
 description: Designs multi-module and fullstack architecture and migration plans
 mode: subagent
-model: openai/gpt-6.1-sol
 permissions:
-  - action: edit
+  - action: "*"
     resource: "*"
     effect: deny
-  - action: shell
+  - action: read
     resource: "*"
-    effect: deny
-  - action: subagent
+    effect: allow
+  - action: glob
     resource: "*"
-    effect: deny
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 
 ## Mission

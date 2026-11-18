@@ -1,8 +1,13 @@
-# Windows + WSL2: invoke the Unix installer inside Ubuntu.
-param([ValidateSet('opencode','claude','codex')][string]$Target = 'opencode')
+param(
+    [ValidateSet('opencode','claude','codex')][string]$Target = 'opencode',
+    [switch]$Replace
+)
 $ErrorActionPreference = 'Stop'
-$RootWin = (Resolve-Path $PSScriptRoot).Path
-$RootLinux = (& wsl.exe -e wslpath -u $RootWin).Trim()
-if ($LASTEXITCODE -ne 0 -or -not $RootLinux) { throw 'Cannot resolve repository path inside WSL' }
-& wsl.exe -e python3 "$RootLinux/tools/pipeline.py" install --target $Target
-if ($LASTEXITCODE -ne 0) { throw 'WSL installation failed' }
+$installArgs = @((Join-Path $PSScriptRoot 'tools/pipeline.py'), 'install', '--target', $Target)
+if ($Replace) { $installArgs += '--replace' }
+if (Get-Command py -ErrorAction SilentlyContinue) {
+    & py -3 @installArgs
+} else {
+    & python @installArgs
+}
+exit $LASTEXITCODE

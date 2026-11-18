@@ -1,37 +1,21 @@
-# Host adapters: OpenCode, Claude Code, Codex
+# Interactive host adapters
 
-All hosts use the **same on-disk task state and `engpipe` CLI**. There is no universal standard for subagent declarations, permission enforcement, provider IDs, session identifiers or runtime logs. The adapters adapt **role prompts**, not magically unify all tool APIs.
+Install the chosen host adapter and run its diagnostics from the application repository. Every orchestrator starts tasks with the actual `--host`. Use `engpipe task` for all state transitions, including immutable review inputs and verdicts. For a terminal process that owns dispatch, resumption and result collection, see [terminal workflow](RUN.md).
 
-## OpenCode V2 (supported main path)
+| Host | Interactive entry | Installed files | Review permissions |
+|---|---|---|---|
+| OpenCode V2 | Open the TUI, type `/agents`, select `pipeline-orchestrator`, and enter the task. | `~/.config/opencode/agents/pipeline-*.md` or the XDG config root. | Reviewers deny tools by default and allow source inspection through read, glob and grep. |
+| Claude Code | From your project, run `claude --agent pipeline-orchestrator` and enter the task. | `~/.claude/agents/pipeline-*.md`, respecting `CLAUDE_CONFIG_DIR`. | Reviewer tools are limited to Read, Glob and Grep. The main orchestrator can dispatch the named child roles and run the CLI. |
+| Codex | Start Codex and enter `$pipeline-orchestrator` followed by the task in the **main conversation**. The same explicit skill applies in clients using this local Codex installation. | `$CODEX_HOME/agents/pipeline-*.toml` (default `~/.codex/agents`) and a main-conversation skill at `~/.agents/skills/pipeline-orchestrator/SKILL.md`. | Native custom agents inherit the parent sandbox. The installed reviewers disable apps, plugins and new permission requests. A dedicated read-only process can enforce filesystem isolation for a terminal review. |
 
-```bash
-bash install.sh opencode
-engpipe doctor
-```
+**OpenCode.** The orchestrator has primary mode. Workers support both standalone dispatch and native child use. An explicit role model is rendered only when configured. The active TUI session can independently select its own model. `doctor --target opencode` compares effective `debug agents` output, checks reviewer permission rules and compares explicit selectors with the local catalog. Project or managed configuration can change the effective result. [Agents](https://opencode.ai/docs/agents) · [TUI selection](https://opencode.ai/docs/cli/tui) · [CLI commands](https://opencode.ai/docs/cli/commands)
 
-Installs 10 `.md` roles as symlinks in `~/.config/opencode/agents/`, sets default `pipeline-orchestrator`, preserves existing provider credentials/settings with a backup. Requires OpenCode V2 and authorized model IDs from current profile. Global `AGENTS.md` is symlinked; project AGENTS.md may add local constraints. See official [OpenCode agent docs](https://opencode.ai/v2/docs/agents).
+**Claude Code.** Starting the orchestrator as the main agent gives it the documented named-child allowlist. After the first installation, use a fresh session. Project or managed definitions may take precedence over user roles. Inspect the effective role if your organization has overrides. The CLI doctor verifies export contents, binary version and availability of the main-agent flag. [Claude custom agents](https://code.claude.com/docs/en/sub-agents) · [CLI reference](https://code.claude.com/docs/en/cli-reference)
 
-OpenCode V2 documents fresh foreground/background child sessions, but background/concurrent availability depends on the installed host version and configuration. The pipeline intentionally does not enable experimental settings or assume a `task-parallel`/join API. Orchestrator attempts concurrent Review A/B only when the live host exposes a safe mechanism; otherwise it uses the required sequential fallback. The deterministic CLI accepts the two results identically in either mode.
+**Codex.** The installed skill gives the main thread the orchestrator's instructions. Use the TOML workers for child dispatch. The CLI doctor verifies exports and the host's `config.load` diagnostic. It does not launch a paid model or independently attest reviewer identity. With a writable parent, maintain separate reviewer contexts and review actual host actions. Run separate writers in their own worktrees. [Codex subagents and inherited settings](https://developers.openai.com/codex/subagents) · [Codex skills](https://developers.openai.com/codex/skills)
 
-## Claude Code (role export, best effort)
+## Shared contract
 
-```bash
-bash install.sh claude
-```
-
-Writes `.md` role prompts under `~/.claude/agents/`. Claude Code supports its own frontmatter and model identifiers; it will not accept OpenCode's model selectors or permission lists verbatim. Export intentionally leaves `model` unspecified. Choose supported models in Claude Code and arrange a separate external provider if distinct model *families* are required for two independent reviews. **Native Claude-only models share the Anthropic family**; two Claude subagents are not independent by our family rule. `engpipe` can still validate task state and gates. See [Claude custom agents](https://claude.com/blog/subagents-in-claude-code).
-
-## Codex (role export, best effort)
-
-```bash
-bash install.sh codex
-```
-
-Writes `.toml` role prompts under `~/.codex/agents/` using `name`, `description`, `developer_instructions` as documented for Codex custom agents. Per-agent model is deliberately left to Codex/account configuration and may not support all OpenRouter providers. Codex subagents inherit parent sandbox/approval scope. Configure actual model routing outside this generator and run independent reviews externally when necessary. See [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
-
-## Design principles
-
-- Session IDs from any host are **optional** audit metadata. A new session may recover from saved task artifacts.
-- Model IDs from different providers are not interchangeable. For externally routed review/author models record the **actual** identity via `--model` / `--author-model` arguments. Provider/model names entered by an agent are not runtime attestation; validate with actual host logs for high-risk work.
-- Reviewer A and B must be distinct families and isolated from each other. If the host cannot achieve this, do not certify `DONE` as independently reviewed; arrange external second reviewer, or stop certification without losing task progress.
-- Neither a role export nor an agent prompt guarantees automatic orchestration on its own. The integration must be E2E tested for the selected tool; all deterministic gates work independently of the host.
+- Preserve the A/B boundary in parallel or sequential execution. Each reviewer receives the same captured input identifier and independently returns evidence. Record the original identifier when submitting the result.
+- A session ID is optional audit metadata. Reconstruct a lost session from the task files. A reported model ID or family is a declaration unless independently observed in host records.
+- A compatible new host needs its own entry point, supported model-selector mapping, permission model and integration tests. Its workers can also use the lower-level task CLI.

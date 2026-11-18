@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$(dirname "$0")"
-python3 tools/pipeline.py install --target "${1:-opencode}"
+#!/usr/bin/env sh
+set -eu
+root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+target=${1:-opencode}
+if [ "$#" -gt 0 ]; then shift; fi
+exec python3 "$root/tools/pipeline.py" install --target "$target" "$@"

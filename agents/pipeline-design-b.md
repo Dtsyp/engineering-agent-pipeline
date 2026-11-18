@@ -1,17 +1,19 @@
 ---
-description: Independent architecture reviewer B: security, operations, tradeoffs and testing
+description: "Independent architecture reviewer B: security, operations, tradeoffs and testing"
 mode: subagent
-model: openrouter/z-ai/glm-5.3
 permissions:
-  - action: edit
+  - action: "*"
     resource: "*"
     effect: deny
-  - action: shell
+  - action: read
     resource: "*"
-    effect: deny
-  - action: subagent
+    effect: allow
+  - action: glob
     resource: "*"
-    effect: deny
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 
 ## Mission
