@@ -127,6 +127,28 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(self.state('new-task').get('design_approved_fingerprint'))
         self.assertFalse(self.state('new-task')['frozen_tests'])
 
+    @unittest.skipUnless(os.name == 'posix', 'POSIX terminal line discipline')
+    def test_console_eof_leaves_reviewed_design_pending(self):
+        import pty
+
+        self.start(size='large', code=3)
+        reviews = self.state('new-task')['design_reviews']
+        master, terminal = pty.openpty()
+        try:
+            # The real terminal reports isatty() true while its next read returns EOF.
+            os.write(master, b'\x04')
+            result = subprocess.run([sys.executable, str(CLI), 'run', 'new-task', '--resume'],
+                                    cwd=self.project, env=self.env, stdin=terminal, capture_output=True,
+                                    encoding='utf8', timeout=30)
+        finally:
+            os.close(master)
+            os.close(terminal)
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn('PAUSED', result.stdout)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(reviews, self.state('new-task')['design_reviews'])
+        self.assertFalse(self.state('new-task').get('design_approved_fingerprint'))
+
     def test_partial_and_malformed_reviews_do_not_publish_a_pass(self):
         for behavior in ('partial', 'empty', 'bad', 'truncated', 'stale'):
             with self.subTest(behavior=behavior):

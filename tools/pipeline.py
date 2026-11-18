@@ -174,6 +174,7 @@ def require_analysis_context(root, s, *, check_source=False, new_tests=()):
 def relative_file(root, value, where):
     if not isinstance(value, str) or not value or Path(value).is_absolute():
         die('expected repository-relative path in ' + where)
+    root = root.resolve()
     path = (root / value).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         die('missing file or path outside repository in ' + where + ': ' + value)
@@ -259,6 +260,7 @@ def impact_checks(cfg, changed):
     return sorted(impacted),commands
 
 def require_frozen(root, s):
+    root = root.resolve()
     require_analysis_context(root, s)
     if not s.get('frozen_tests'):
         die('no frozen acceptance tests; task freeze-tests is mandatory')
@@ -504,6 +506,32 @@ def migrate(root, old, a):
           'slice-check, gate and both reviews. Prior PASS records do not carry forward.')
 
 
+def interactive_input(stream=None):
+    """Return whether stdin can read a confirmation from a real terminal."""
+    stream = sys.stdin if stream is None else stream
+    try:
+        if stream is None or not stream.isatty():
+            return False
+        if os.name != 'nt':
+            return True
+        # The Windows CRT considers character devices including NUL to be ttys.
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+        get_mode = ctypes.WinDLL('kernel32', use_last_error=True).GetConsoleMode
+        get_mode.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        get_mode.restype = wintypes.BOOL
+        mode = wintypes.DWORD()
+        return bool(get_mode(msvcrt.get_osfhandle(stream.fileno()), ctypes.byref(mode)))
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def pause_approval(slug):
+    print(f'Approval is pending. Run engpipe task approve-design {slug} in an interactive terminal.', file=sys.stderr)
+    raise SystemExit(3)
+
+
 def cmd_task(a):
     root = project_root()
     directory = tdir(root, a.slug)
@@ -642,13 +670,17 @@ def locked_task(root, a):
     if a.op in ('design-review', 'code-review'):
         return record_review(root, s, a, a.op.split('-')[0])
     if a.op == 'approve-design':
-        if not sys.stdin.isatty():
-            die('approval requires an interactive terminal')
         current = review_input(root, s, 'design', dispatch=True)['against']
         require_pair(s, 'design', current)
+        if not interactive_input():
+            pause_approval(a.slug)
         expected = 'APPROVE ' + a.slug
         print(f'Design {td / "design.md"} has two PASS reviews against {current}.')
-        if input('Type exactly ' + expected + ': ') != expected:
+        try:
+            answer = input('Type exactly ' + expected + ': ')
+        except (EOFError, KeyboardInterrupt, OSError):
+            pause_approval(a.slug)
+        if answer != expected:
             die('approval not granted')
         if review_input(root, s, 'design', dispatch=True)['against'] != current:
             die('design changed during approval')

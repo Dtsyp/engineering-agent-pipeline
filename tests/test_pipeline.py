@@ -373,6 +373,31 @@ class GateTests(unittest.TestCase):
         self.assertIn('.engineering-pipeline/checks.json',listed)
         self.assertNotIn('/tasks/',listed)
 
+    def test_review_from_symlinked_repository_root_preserves_frozen_test_guard(self):
+        self.action('gate')
+        state = pipeline.get_state(self.root, 'good-task')
+        current = pipeline.review_input(self.root, state, 'code')
+        with tempfile.TemporaryDirectory() as directory:
+            alias = Path(directory) / 'checkout-alias'
+            try:
+                alias.symlink_to(self.root, target_is_directory=True)
+            except OSError as exc:
+                if os.name == 'nt' and getattr(exc, 'winerror', None) == 1314:
+                    self.skipTest('creating symlinks requires Windows Developer Mode or the symlink privilege')
+                raise
+            self.assertEqual(pipeline.review_input(alias, state, 'code'), current)
+            test = self.root / 'test_app.py'
+            original = self.root / 'original_test.py'
+            test.rename(original)
+            test.symlink_to(original)
+            with self.assertRaisesRegex(pipeline.PipelineError, 'frozen acceptance test changed'):
+                pipeline.require_frozen(alias, state)
+            outside = Path(directory) / 'elsewhere.py'
+            outside.write_text('assert False', encoding='utf8')
+            (self.root / 'external.py').symlink_to(outside)
+            with self.assertRaisesRegex(pipeline.PipelineError, 'outside repository'):
+                pipeline.relative_file(alias, 'external.py', 'analysis evidence')
+
     def test_gate_and_reviews_survive_checkout_move(self):
         import shutil
         self.action('gate')
@@ -391,11 +416,22 @@ class GateTests(unittest.TestCase):
         design.write_text('approved candidate\n',encoding='utf8')
         for focus in 'ab':
             self.action('design-review',focus=focus,verdict='PASS',blockers=0,session=focus)
-        self.cli('task','approve-design','good-task',ok=False)
+        with open(os.devnull, 'r') as null_input:
+            self.assertFalse(pipeline.interactive_input(null_input))
+        result = subprocess.run([sys.executable,str(ROOT/'tools/pipeline.py'),'task','approve-design','good-task'],
+                                cwd=self.root,stdin=subprocess.DEVNULL,capture_output=True,encoding='utf8',timeout=30)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        before = pipeline.get_state(self.root, 'good-task')
+        for interrupt in (EOFError, KeyboardInterrupt, OSError):
+            with mock.patch.object(pipeline,'interactive_input',return_value=True), mock.patch('builtins.input',side_effect=interrupt):
+                with self.assertRaises(SystemExit) as paused:
+                    self.action('approve-design')
+            self.assertEqual(paused.exception.code, 3)
+            self.assertEqual(pipeline.get_state(self.root,'good-task'), before)
         def response(_):
             design.write_text('unexpected change\n',encoding='utf8')
             return 'APPROVE good-task'
-        with mock.patch.object(sys.stdin,'isatty', return_value=True),mock.patch('builtins.input',side_effect=response):
+        with mock.patch.object(pipeline,'interactive_input',return_value=True),mock.patch('builtins.input',side_effect=response):
             with self.assertRaisesRegex(pipeline.PipelineError,'changed'):
                 self.action('approve-design')
         self.assertFalse(pipeline.get_state(self.root,'good-task').get('design_approved_fingerprint'))

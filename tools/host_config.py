@@ -157,6 +157,15 @@ def journal_path(host):
     return routing.data_dir() / ('installing-' + host + '.json')
 
 
+def install_message(*parts):
+    message = ' '.join(str(part) for part in parts)
+    # Embedded callers may redirect stdout to a strict legacy Windows codepage.
+    encoding = getattr(sys.stdout, 'encoding', None)
+    if encoding:
+        message = message.encode(encoding, errors='backslashreplace').decode(encoding)
+    print(message)
+
+
 def install(host, policy, replace=False):
     journal = journal_path(host)
     previous = json.loads(journal.read_text(encoding='utf8')) if journal.exists() else {}
@@ -209,14 +218,14 @@ def install(host, policy, replace=False):
         backup = Path(tempfile.mkdtemp(prefix=host + '-', dir=backup_root))
         for directory in legacy:
             shutil.move(str(directory), str(backup / directory.name))
-        print('Archived old role backups in', backup)
+        install_message('Archived old role backups in', backup)
     for path, data in pending:
         if path.exists() or path.is_symlink():
             if backup is None:
                 backup_root = routing.data_dir() / 'backups'
                 backup_root.mkdir(parents=True, exist_ok=True)
                 backup = Path(tempfile.mkdtemp(prefix=host + '-', dir=backup_root))
-                print('Backup directory:', backup)
+                install_message('Backup directory:', backup)
             old_name = digest(os.fsencode(path))[:16] + '-' + path.name
             if path.is_symlink():
                 old_name += '.link.json'
@@ -233,9 +242,9 @@ def install(host, policy, replace=False):
     atomic_text(manifest_path(host), json.dumps(recorded, indent=2))
     atomic_text(routing.config_path(host), json.dumps(policy, indent=2) + '\n')
     journal.unlink()
-    print('Installed', host, 'in', role_dir(host))
-    print('CLI:', wrapper, '(add its directory to PATH)')
-    print('Interactive entry:', interactive_hint(host))
+    install_message('Installed', host, 'in', role_dir(host))
+    install_message('CLI:', wrapper, '(add its directory to PATH)')
+    install_message('Interactive entry:', interactive_hint(host))
 
 
 def update_policy(host, policy):

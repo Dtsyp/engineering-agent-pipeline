@@ -416,12 +416,15 @@ def advance(root, directory, request, args, core):
         request.pop('batch', None)
         save(root, directory / 'runner.json', request)
         if stage == 'design':
-            if not sys.stdin.isatty():
+            outcome = 3
+            if core.interactive_input():
+                outcome = subprocess.run(
+                    [sys.executable, str(CLI), 'task', 'approve-design', slug], cwd=root).returncode
+            if outcome == 3:
                 print(f'PAUSED: inspect design.md, run engpipe task approve-design {slug}, '
                       f'then engpipe run {slug} --resume')
                 raise SystemExit(3)
-            result = subprocess.run([sys.executable, str(CLI), 'task', 'approve-design', slug], cwd=root)
-            if result.returncode:
+            if outcome:
                 raise ValueError('design approval was not recorded')
             continue
         result = task(root, 'finish', slug)

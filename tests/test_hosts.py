@@ -1,4 +1,6 @@
 import base64
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -177,6 +179,24 @@ class InstallTests(unittest.TestCase):
         self.assertIn('older', [p.read_text(encoding='utf8') for p in (self.home / 'pipeline settings/backups').rglob(path.name)])
         backup_files = (self.home / 'pipeline settings/backups').rglob('*-' + path.name)
         self.assertEqual(next(backup_files).read_text(), 'customized')
+
+    def test_install_messages_respect_output_encoding(self):
+        self.cli('install', '--target', 'opencode')
+        with mock.patch.dict(os.environ, self.env):
+            for encoding, preset in (('cp1252', 'budget'), ('utf8', 'inherit')):
+                with self.subTest(encoding=encoding):
+                    output = io.BytesIO()
+                    with io.TextIOWrapper(output, encoding=encoding) as stream:
+                        with contextlib.redirect_stdout(stream):
+                            host_config.update_policy('opencode', routing.profile_policy(preset, 'opencode'))
+                        stream.flush()
+                        messages = output.getvalue().decode(encoding)
+                    self.assertIn('Backup directory:', messages)
+                    expected = str(self.home).encode(encoding, errors='backslashreplace').decode(encoding)
+                    self.assertIn(expected, messages)
+                    self.assertEqual(routing.task_policy('opencode'), routing.profile_policy(preset, 'opencode'))
+                    self.assertFalse(host_config.journal_path('opencode').exists())
+                    host_config.verify_installed('opencode')
 
     def test_interrupted_routing_update_recovers_without_overwriting_edits(self):
         self.cli('install', '--target', 'opencode')
