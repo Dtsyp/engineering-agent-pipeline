@@ -1,17 +1,19 @@
 ---
-description: Independent architecture reviewer A: correctness and contracts
+description: "Independent architecture reviewer A: correctness and contracts"
 mode: subagent
-model: openrouter/moonshotai/kimi-k3.1-pro
 permissions:
-  - action: edit
+  - action: "*"
     resource: "*"
     effect: deny
-  - action: shell
+  - action: read
     resource: "*"
-    effect: deny
-  - action: subagent
+    effect: allow
+  - action: glob
     resource: "*"
-    effect: deny
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 
 ## Mission

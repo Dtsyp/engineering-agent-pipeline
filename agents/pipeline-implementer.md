@@ -1,7 +1,6 @@
 ---
 description: Implements one approved task/slice, writes tests, handles integration
 mode: subagent
-model: openai/gpt-6.1-sol
 permissions:
   - action: edit
     resource: "*"

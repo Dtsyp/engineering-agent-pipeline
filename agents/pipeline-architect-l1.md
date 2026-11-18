@@ -1,17 +1,19 @@
 ---
 description: Plans local changes with minimal complexity and clear validation
 mode: subagent
-model: openai/gpt-6.1-terra
 permissions:
-  - action: edit
+  - action: "*"
     resource: "*"
     effect: deny
-  - action: shell
+  - action: read
     resource: "*"
-    effect: deny
-  - action: subagent
+    effect: allow
+  - action: glob
     resource: "*"
-    effect: deny
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 
 ## Mission

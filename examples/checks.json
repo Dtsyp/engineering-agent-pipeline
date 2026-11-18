@@ -8,7 +8,7 @@
       "depends_on": [],
       "slice_checks": [
         [
-          "python3",
+          "python",
           "-m",
           "pytest",
           "backend/tests/domain",
@@ -26,7 +26,7 @@
       ],
       "slice_checks": [
         [
-          "python3",
+          "python",
           "-m",
           "pytest",
           "backend/tests/api",
@@ -62,16 +62,24 @@
       "depends_on": [],
       "slice_checks": [
         [
-          "python3",
-          "-c",
-          "print('Check configuration mapping for your project')"
+          "git",
+          "diff",
+          "--check",
+          "HEAD"
+        ],
+        [
+          "npm",
+          "--prefix",
+          "frontend",
+          "run",
+          "typecheck"
         ]
       ]
     }
   },
   "full_checks": [
     [
-      "python3",
+      "python",
       "-m",
       "pytest",
       "backend/tests",
